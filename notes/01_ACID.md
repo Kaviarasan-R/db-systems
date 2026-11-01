@@ -61,3 +61,125 @@
   * WAL records are only discarded or overwritten after a process called a Checkpoint occurs.
   * In engines like **PostgreSQL**, WAL files are fixed-size segments (typically 16 MB each). Once all transactions have been checkpointed, the engine either deletes the file or renames and reuses it for upcoming log entries.
 * **Asynchronous Snapshot:** In systems like Redis, the primary data structure lives directly in RAM for microsecond speeds. To achieve durability, Redis offers periodic asynchronous point-in-time snapshots called RDB (Redis Database file).
+
+## Implementation
+
+### Setup
+
+```shell
+docker run -d --name pgacid -e POSTGRES_PASSWORD=postgres postgres:latest
+docker exec -it pgacid psql -U postgres
+```
+
+```psql
+create table products (pid serial primary key, name text, price float, inventory integer);
+create table sales (sid serial primary key, pid integer, price float, quantity integer);
+insert into products (name, price, inventory) values ('Phone', '999.99', 100);
+```
+
+### Atomicity & Consistency
+
+Transaction A
+```psql
+begin transaction;
+update products set inventory = inventory - 10;
+insert into sales (pid, price, quantity) values (1, 999.99, 10);
+select * from products;
+select * from sales;
+commit; # or rollback;
+```
+
+Transaction B
+```psql
+select * from products; # It reads 100 unless commited.
+select * from sales; # It reads 0 unless commited.
+```
+
+### Isolation
+
+Transaction A
+```psql
+begin transaction; # default isolation level is read committed.
+select pid, count(pid) from sales group by pid;
+# Transaction B committed here, which costs phantom read problem.
+select pid, price, quantity from sales; 
+```
+
+Transaction B
+```psql
+begin transaction;
+insert into sales (pid, price, quantity) values (1, 999.99, 10);
+update products set inventory = inventory - 10 where pid = 1;
+commit;
+```
+
+Ideal Transaction A Isolation Level should be **repeatable read** in postgres or **serializable** in other dbs, which freezes the view—ensuring the entire transaction only sees the data as it existed at the start.
+```psql
+begin transaction isolation level repeatable read;
+begin transaction isolation level serializable;
+```
+
+#### Serializable vs Repeatable Reads
+
+**Repeatable Read Level**
+
+```psql
+select * from test;
+ id | t 
+----+---
+  1 | b
+  2 | b
+  3 | a
+  4 | a
+```
+
+Transaction A
+```psql
+begin transaction isolation level repeatable read;
+update test set t = 'a' where t = 'b';
+commit;
+```
+
+Transaction B
+```psql
+begin transaction isolation level repeatable read;
+update test set t = 'b' where t = 'a';
+commit;
+```
+
+```psql
+select * from test;
+ id | t 
+----+---
+  1 | a
+  2 | a
+  3 | b
+  4 | b
+```
+
+**Serializable Level:** Under Serializable isolation, concurrent/parallel transactions that aborts the second transaction with a serialization error to preserve serial correctness.
+
+Transaction A
+```psql
+begin transaction isolation level serializable;
+update test set t = 'a' where t = 'b';
+commit;
+```
+
+Transaction B
+```psql
+begin transaction isolation level serializable;
+update test set t = 'b' where t = 'a';
+commit; ❌ throws error, because transaction A is committed first while transaction B is open.
+```
+
+```psql
+select * from test;
+ id | t 
+----+---
+  1 | a
+  2 | a
+  3 | a
+  4 | a
+```
+
