@@ -29,3 +29,35 @@
 * **Table level locks:** Transaction A acquires an exclusive table-level lock. No other transaction can read or write to any record in that table until Transaction A finishes.
 
 ### Consistency
+
+#### Consistency in Data
+* A common example of consistency failure in real systems is inconsistent or corrupted data. Without foreign key constraints, child tables can end up with orphan records—such as an order referencing a non-existent customer ID.
+* Atomicity ensures multi-step modifications do not stop halfway (like debiting one account without crediting the other).
+* Isolation prevents concurrent transactions from seeing each other's half-finished results.
+* Consistency represents the final guarantee: once a transaction finishes, the database as a whole remains complete with every relational rule defined in the schema.
+
+#### Eventual Consistency in Distributed / NoSQL Databases
+* In distributed databases like Amazon DynamoDB, Apache Cassandra, or MongoDB, data is replicated across multiple physical servers (nodes) to guarantee high availability and fault tolerance.
+* When an item is written or updated, the database engine returns a success response as soon as a acknowledges the write, and then asynchronously replicates that change to the remaining replica nodes in the background.
+* **Eventual consistency** refers to an application updates a record and immediately attempts to read it, the request might be routed to a replica node that has not yet processed the background sync, returning old data.
+* There are different kind of replication such as Synchronous replication & Asynchronous replication.
+* It is important to distinguish this from ACID consistency. While ACID consistency focuses on schema validity and integrity rules (such as foreign key constraints and check conditions), eventual consistency is purely a distributed systems concept governing how quickly data synchronization achieves uniform state across multiple machines.
+
+### Durability
+* It guarantees that once a transaction commits, its modifications are permanently recorded in non-volatile storage and will survive power outages, OS crashes, or hardware reboots.
+* **Write-Ahead Logging (WAL):** In relational databases (such as PostgreSQL and MySQL), Write-Ahead Logging guarantees that a sequential, append-only log entry describing every insert, update, and commit record is physically added to disk via an `fsync` operation, without `fsync` it may write log to `cache`.
+  * **LSN (Log Sequence Number):** A monotonically increasing 64-bit integer tracking the entry's position.
+  * **Transaction ID (XID):** Identifies which transaction executed the change.
+  * **Record Type:** `INSERT, UPDATE, DELETE, COMMIT, ABORT, or CHECKPOINT`.
+  * **Target Location:** Specific Page ID and Offset (Slot number) on disk.
+  * **Undo/Redo Payloads:** Redo data has values needed to re-apply the changes. Undo data has values before the change (used to roll back if aborted).
+  * If db crashes after `LSN: 10455`, the actual table data on disk may not have been updated yet. During crash recovery, the database boots up, inspects the WAL, get the transaction and find the `[COMMIT]`, and replays operations `10453` and `10454` into the table pages.
+    ```
+    [LSN: 10452] [XID: 801] [START]
+    [LSN: 10453] [XID: 801] [INSERT] Page: 42, Slot: 3, Data: (id=10, name='Alice', balance=500)
+    [LSN: 10454] [XID: 801] [UPDATE] Page: 88, Slot: 1, PrevVal: (balance=200), NewVal: (balance=100)
+    [LSN: 10455] [XID: 801] [COMMIT]   <-- WAL added to disk (fsync). Client receives success!
+    ```
+  * WAL records are only discarded or overwritten after a process called a Checkpoint occurs.
+  * In engines like **PostgreSQL**, WAL files are fixed-size segments (typically 16 MB each). Once all transactions have been checkpointed, the engine either deletes the file or renames and reuses it for upcoming log entries.
+* **Asynchronous Snapshot:** In systems like Redis, the primary data structure lives directly in RAM for microsecond speeds. To achieve durability, Redis offers periodic asynchronous point-in-time snapshots called RDB (Redis Database file).
