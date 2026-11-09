@@ -183,3 +183,4 @@ select * from test;
   4 | a
 ```
 
+## TODO: Pessimistic vs Optimistic
