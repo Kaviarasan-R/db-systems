@@ -45,7 +45,7 @@
 * We can index (quick reference) on one column or more.
 * Index pages do not live inside heap pages. They are stored in entirely separate files on disk, each formatted as 8 KB blocks specifically designed for that access method (e.g., B-Tree internal/leaf layout vs. Heap tuple layout).
 * So, basically 2 or more separate IO's performed. 1 I/O to read the B-Tree root page. 1 I/O to jump to the heap page and fetch the actual tuple.
-* Index tells you EXACTLY which page to fetch in the heap instead of taking the hit to scan every page in the heap.
+* Index tells us EXACTLY which page to fetch in the heap instead of taking the hit to scan every page in the heap.
 * NOTE: The index is also stored as pages and cost IO to pull the entries of the index.
 * The smaller the index, the more it can fit in memory the faster the search. So, avoid indexing every column in table.
 * Popular data structure for index is b-trees.
@@ -73,3 +73,45 @@ If index is used, then we can skip reading pages sequential and search exactly t
 
 ## Row vs Column Based Databases
 
+### Row Oriented Databases
+* Tables are stored as rows in disk.
+* A single page/block will hold one or more rows.
+* A single page/block IO can fetch multiple rows with all their columns.
+* **Assuming No Indexes Used:** More IOs are required to find a particular row in a table scan because it starts from first block, but once we find the row then get all columns for that row as free of cost.
+* Vertical partitioning, splits a table by columns into separate smaller tables. (e.g. Users table with 20 columns, split it into Users_Core [ID, Name, Email] and Users_Profile [ID, Bio, Profile_Picture_Blob]). Row-oriented databases (OLTP) like PostgreSQL or MySQL to isolate heavy or rarely accessed columns.
+* Row oriented databases concept called OLTP (Online Transaction Processing)
+
+![row db 1](../assets/row-db-1.png)
+
+### Column Oriented Databases
+* Tables are stored as columns first in disk.
+* Working with multiple columns require more IO's.
+* Column oriented databases concept called OLAP (Online Analytical Processing) (e.g. snowflake, hadoop big data)
+* A single table column can have multiple blocks due to max block size. Every page/block has metadata where it stores the other parts of blocks that is split for same column.
+* Each value in every block have mentioned with row_id "xxx:001, yyy:002". Once we find the row_id, then using that row_id can get the exact value from other block.
+
+![1](../assets/col-db-1.png)
+
+* It is very inefficient when it queries for multi-columns.
+
+![2](../assets/col-db-2.png)
+
+* It is very efficient with aggregation queries.
+
+![3](../assets/col-db-3.png)
+
+At last, When in need of every column frequently then row oriented is good, if sometimes only few columns are in need then column oriented is good.
+
+## Primary vs Secondary Keys
+
+### Primary Key 
+* Clustered Index = Sorted Table: The database physically stores table rows sorted by the Primary Key inside a B-Tree (there is no separate heap). MySQL (InnoDB) is a prime example. PostgreSQL, however, separates storage into a Heap + B-Tree, meaning it has no true clustered index—as soon as we insert or update rows, Postgres places them wherever free space exists in the heap, breaking any physical order. By only taking this into argument, InnoDB wins. But, In real world postgres uses other techniques to overcome this.
+* Sequential keys (1, 2, 3...) neatly append new rows to the end of the tree. Random UUIDs force the database to insert rows into the middle, causing page splits
+* In MySQL (InnoDB), rows are physically stored sorted by the Primary Key by default. In Postgres, pages are never stored sorted by default. They are simply stored in insertion/free-space order inside the heap, regardless of Primary Key. Then comes the secondary key useful for postgres.
+* Index Organised Table for MySQL.
+
+### Secondary Key
+* Every secondary index creates its own separate B-Tree sorted by the indexed column. At the leaf level, it stores the indexed value paired with a pointer to the full row—pointing directly to the Heap in PostgreSQL, or to the Primary Key value in MySQL (InnoDB). Because each index is an independent B-Tree, adding more indexes speeds up reads on those columns but slows down writes, as every tree must be updated on insert/update/delete.
+* A Foreign Key is a logical constraint, not an index by definition. MySQL (InnoDB) automatically creates a secondary B-Tree index on every Foreign Key column, whereas PostgreSQL does not.
+* MySQL (InnoDB), Secondary Indexes do not store physical disk pointers—they store the Primary Key value, meaning a secondary lookup must traverse two B-Trees (Secondary B-Tree -> Primary Key B-Tree) to fetch the row.
+* In Postgres, Secondary key b-tree checks for pointers in Heap Organised Table. Whereas In MySQL, mentioned in previous point.
