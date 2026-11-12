@@ -67,6 +67,7 @@
 ### Setup
 
 ```shell
+docker pull postgres:latest
 docker run -d --name pgacid -e POSTGRES_PASSWORD=postgres postgres:latest
 docker exec -it pgacid psql -U postgres
 ```
